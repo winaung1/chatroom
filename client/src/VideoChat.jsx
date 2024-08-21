@@ -6,47 +6,48 @@ const socket = io("https://chatroom-ouj0.onrender.com");
 
 const VideoChat = () => {
   const [roomId, setRoomId] = useState("");
-  const [peers, setPeers] = useState([]);
+  const [isRoomCreated, setIsRoomCreated] = useState(false);
   const userVideo = useRef();
   const peersRef = useRef([]);
 
   useEffect(() => {
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
-      userVideo.current.srcObject = stream;
+    if (isRoomCreated) {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
+        userVideo.current.srcObject = stream;
 
-      socket.on("user-connected", (userId) => {
-        const peer = createPeer(userId, socket.id, stream);
-        peersRef.current.push({
-          peerID: userId,
-          peer,
+        socket.on("user-connected", (userId) => {
+          const peer = createPeer(userId, socket.id, stream);
+          peersRef.current.push({
+            peerID: userId,
+            peer,
+          });
         });
-        setPeers((prevPeers) => [...prevPeers, peer]);
-      });
 
-      socket.on("receive-signal", (payload) => {
-        const peer = addPeer(payload.signal, payload.callerID, stream);
-        peersRef.current.push({
-          peerID: payload.callerID,
-          peer,
+        socket.on("receive-signal", (payload) => {
+          const peer = addPeer(payload.signal, payload.callerID, stream);
+          peersRef.current.push({
+            peerID: payload.callerID,
+            peer,
+          });
         });
-        setPeers((prevPeers) => [...prevPeers, peer]);
-      });
 
-      socket.on("signal-returned", (payload) => {
-        const peer = peersRef.current.find((p) => p.peerID === payload.id);
-        peer.peer.signal(payload.signal);
-      });
+        socket.on("signal-returned", (payload) => {
+          const peer = peersRef.current.find((p) => p.peerID === payload.id);
+          peer.peer.signal(payload.signal);
+        });
 
-      socket.on("user-disconnected", (userId) => {
-        const peerObj = peersRef.current.find((p) => p.peerID === userId);
-        if (peerObj) {
-          peerObj.peer.destroy();
-        }
-        peersRef.current = peersRef.current.filter((p) => p.peerID !== userId);
-        setPeers(peersRef.current.map((p) => p.peer));
+        socket.on("user-disconnected", (userId) => {
+          const peerObj = peersRef.current.find((p) => p.peerID === userId);
+          if (peerObj) {
+            peerObj.peer.destroy();
+          }
+          peersRef.current = peersRef.current.filter((p) => p.peerID !== userId);
+        });
+
+        socket.emit("join-room", roomId);
       });
-    });
-  }, []);
+    }
+  }, [isRoomCreated, roomId]);
 
   const createPeer = (userToSignal, callerID, stream) => {
     const peer = new Peer({
@@ -91,29 +92,36 @@ const VideoChat = () => {
     return peer;
   };
 
-  const joinRoom = () => {
-    socket.emit("join-room", roomId);
+  const handleRoomAction = () => {
+    if (roomId.trim()) {
+      setIsRoomCreated(true);
+    }
   };
 
   return (
     <div className="container mx-auto">
       <div className="flex justify-center items-center h-screen">
-        <div>
-          <input
-            type="text"
-            placeholder="Enter Room ID"
-            value={roomId}
-            onChange={(e) => setRoomId(e.target.value)}
-            className="border p-2 mb-4"
-          />
-          <button onClick={joinRoom} className="bg-blue-500 text-white p-2 rounded">
-            Join Room
-          </button>
-          <div id="video-grid" className="grid grid-cols-2 gap-4 mt-4">
-            <video playsInline muted ref={userVideo} autoPlay className="w-full h-auto" />
-            {/* Additional video elements will be appended here */}
+        {!isRoomCreated ? (
+          <div>
+            <input
+              type="text"
+              placeholder="Enter Room ID"
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              className="border p-2 mb-4"
+            />
+            <button onClick={handleRoomAction} className="bg-blue-500 text-white p-2 rounded">
+              Join or Create Room
+            </button>
           </div>
-        </div>
+        ) : (
+          <div>
+            <div id="video-grid" className="grid grid-cols-2 gap-4">
+              <video playsInline muted ref={userVideo} autoPlay className="w-full h-auto" />
+              {/* Additional video elements will be appended here */}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
