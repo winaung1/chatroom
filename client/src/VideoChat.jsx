@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 import { v4 as uuidV4 } from "uuid";
 import Peer from "simple-peer";
 
-const socket = io("http://localhost:3001");
+const socket = io("https://chatroom-ouj0.onrender.com");
 
 const VideoChat = () => {
   const [roomId, setRoomId] = useState("");
