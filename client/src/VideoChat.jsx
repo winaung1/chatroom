@@ -8,11 +8,10 @@ const socket = io("https://chatroom-ouj0.onrender.com");
 const VideoChat = () => {
   const [roomId, setRoomId] = useState("");
   const [myId, setMyId] = useState("");
-  const [users, setUsers] = useState([]);
-  const [stream, setStream] = useState();
   const [peers, setPeers] = useState([]);
   const myVideo = useRef();
   const peersRef = useRef([]);
+  const [stream, setStream] = useState();
 
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
@@ -21,12 +20,27 @@ const VideoChat = () => {
     });
 
     socket.on("user-connected", (userId) => {
-      const peer = addPeer(userId, stream);
+      // When a new user connects, create a peer and send them a signal
+      const peer = createPeer(userId, socket.id, stream);
       peersRef.current.push({ peerID: userId, peer });
-      setPeers((peers) => [...peers, peer]);
+      setPeers((prevPeers) => [...prevPeers, peer]);
+    });
+
+    socket.on("user-joined", (payload) => {
+      // When we receive a signal from a user, add their stream
+      const peer = addPeer(payload.signal, payload.callerID, stream);
+      peersRef.current.push({ peerID: payload.callerID, peer });
+      setPeers((prevPeers) => [...prevPeers, peer]);
+    });
+
+    socket.on("receiving-returned-signal", (payload) => {
+      // When we receive a signal back, connect the peer
+      const item = peersRef.current.find((p) => p.peerID === payload.id);
+      item.peer.signal(payload.signal);
     });
 
     socket.on("user-disconnected", (userId) => {
+      // Handle user disconnects by removing the peer from the list
       const peerObj = peersRef.current.find((p) => p.peerID === userId);
       if (peerObj) {
         peerObj.peer.destroy();
@@ -34,44 +48,7 @@ const VideoChat = () => {
       peersRef.current = peersRef.current.filter((p) => p.peerID !== userId);
       setPeers(peersRef.current.map((p) => p.peer));
     });
-
-    socket.on("user-joined", (payload) => {
-      const peer = addPeer(payload.callerID, stream, true, payload.signal);
-      peersRef.current.push({ peerID: payload.callerID, peer });
-      setPeers((peers) => [...peers, peer]);
-    });
-
-    socket.on("receiving-returned-signal", (payload) => {
-      const peerObj = peersRef.current.find((p) => p.peerID === payload.id);
-      peerObj.peer.signal(payload.signal);
-    });
   }, []);
-
-  const addPeer = (userIdToSignal, stream, isInitiator = false, incomingSignal = null) => {
-    const peer = new Peer({
-      initiator: isInitiator,
-      trickle: false,
-      stream,
-    });
-
-    peer.on("signal", (signal) => {
-      if (isInitiator) {
-        socket.emit("sending-signal", { userToSignal: userIdToSignal, callerID: myId, signal });
-      } else {
-        socket.emit("returning-signal", { signal, callerID: userIdToSignal });
-      }
-    });
-
-    peer.on("stream", (userVideoStream) => {
-      setUsers((users) => [...users, userVideoStream]);
-    });
-
-    if (incomingSignal) {
-      peer.signal(incomingSignal);
-    }
-
-    return peer;
-  };
 
   const createRoom = () => {
     const newRoomId = uuidV4();
@@ -83,6 +60,43 @@ const VideoChat = () => {
   const joinRoom = () => {
     socket.emit("join-room", roomId, socket.id);
     setMyId(socket.id);
+  };
+
+  const createPeer = (userToSignal, callerID, stream) => {
+    const peer = new Peer({
+      initiator: true,
+      trickle: false,
+      stream,
+    });
+
+    peer.on("signal", (signal) => {
+      socket.emit("sending-signal", { userToSignal, callerID, signal });
+    });
+
+    peer.on("stream", (stream) => {
+      setPeers((prevPeers) => [...prevPeers, peer]);
+    });
+
+    return peer;
+  };
+
+  const addPeer = (incomingSignal, callerID, stream) => {
+    const peer = new Peer({
+      initiator: false,
+      trickle: false,
+      stream,
+    });
+
+    peer.on("signal", (signal) => {
+      socket.emit("returning-signal", { signal, callerID });
+    });
+
+    peer.on("stream", (stream) => {
+      setPeers((prevPeers) => [...prevPeers, peer]);
+    });
+
+    peer.signal(incomingSignal);
+    return peer;
   };
 
   return (
@@ -120,7 +134,7 @@ const VideoChat = () => {
               </p>
             </div>
           )}
-          <div className="mt-8">
+          <div className="mt-8 grid grid-cols-2 gap-4">
             <video playsInline muted ref={myVideo} autoPlay className="w-full h-auto" />
             {peers.map((peer, index) => (
               <Video key={index} peer={peer} />
