@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from "react";
-import { v4 as uuidv4 } from "uuid";
-import VideoChat from "./VideoChat";
+import React from 'react';
+import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
+import RoomCreation from './RoomCreation';
+import VideoChat from './VideoChat';
 
-const App = () => {
-
-
+function App() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <VideoChat />
-    </div>
+
+      <Routes>
+        <Route path="/" element={<RoomCreation />} />
+        <Route path="/video-chat/:roomId" element={<VideoChat />} />
+      </Routes>
+
   );
-};
+}
 
 export default App;
