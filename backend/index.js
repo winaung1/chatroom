@@ -1,28 +1,22 @@
 
-
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
+const io = new Server(server);
 
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-  },
-});
+const users = {};
+
 io.on("connection", (socket) => {
   console.log(`New connection: ${socket.id}`);
 
-  socket.on("join-room", (roomId) => {
+  socket.on("join-room", ({ roomId, name }) => {
     socket.join(roomId);
-    socket.to(roomId).emit("user-connected", socket.id);
+    users[socket.id] = { roomId, name };
 
-    socket.on("disconnect", () => {
-      socket.to(roomId).emit("user-disconnected", socket.id);
-    });
+    socket.to(roomId).emit("user-connected", { id: socket.id, name });
 
     socket.on("send-signal", (payload) => {
       io.to(payload.userToSignal).emit("receive-signal", {
@@ -36,6 +30,12 @@ io.on("connection", (socket) => {
         signal: payload.signal,
         id: socket.id,
       });
+    });
+
+    socket.on("disconnect", () => {
+      const { roomId, name } = users[socket.id];
+      delete users[socket.id];
+      socket.to(roomId).emit("user-disconnected", { id: socket.id, name });
     });
   });
 });

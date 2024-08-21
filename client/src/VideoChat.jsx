@@ -2,9 +2,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import Peer from "simple-peer";
 
+// const socket = io("http://localhost:3001");
 const socket = io("https://chatroom-ouj0.onrender.com");
 
 const VideoChat = () => {
+  const [name, setName] = useState("");
   const [roomId, setRoomId] = useState("");
   const [isRoomCreated, setIsRoomCreated] = useState(false);
   const userVideo = useRef();
@@ -44,10 +46,10 @@ const VideoChat = () => {
           peersRef.current = peersRef.current.filter((p) => p.peerID !== userId);
         });
 
-        socket.emit("join-room", roomId);
+        socket.emit("join-room", { roomId, name });
       });
     }
-  }, [isRoomCreated, roomId]);
+  }, [isRoomCreated, roomId, name]);
 
   const createPeer = (userToSignal, callerID, stream) => {
     const peer = new Peer({
@@ -93,16 +95,23 @@ const VideoChat = () => {
   };
 
   const handleRoomAction = () => {
-    if (roomId.trim()) {
+    if (name.trim() && roomId.trim()) {
       setIsRoomCreated(true);
     }
   };
 
   return (
-    <div className="container mx-auto">
+    <div className="p-4 container mx-auto">
       <div className="flex justify-center items-center h-screen">
         {!isRoomCreated ? (
           <div>
+            <input
+              type="text"
+              placeholder="Enter Your Name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="border p-2 mb-4"
+            />
             <input
               type="text"
               placeholder="Enter Room ID"
@@ -117,7 +126,8 @@ const VideoChat = () => {
         ) : (
           <div>
             <div id="video-grid" className="grid grid-cols-2 gap-4">
-              <video playsInline muted ref={userVideo} autoPlay className="w-full h-auto" />
+              <video playsInline muted ref={userVideo} autoPlay className=" rounded-xl w-full h-auto" /><br />
+              <p>{name}</p>
               {/* Additional video elements will be appended here */}
             </div>
           </div>
