@@ -1,65 +1,71 @@
+
 import React, { useState, useRef, useEffect } from "react";
 import { io } from "socket.io-client";
-import { v4 as uuidV4 } from "uuid";
 import Peer from "simple-peer";
+import { v4 as uuidV4 } from "uuid";
 
 const socket = io("https://chatroom-ouj0.onrender.com");
+// const socket = io("http://localhost:3001");
 
 const VideoChat = () => {
   const [roomId, setRoomId] = useState("");
-  const [myId, setMyId] = useState("");
   const [peers, setPeers] = useState([]);
   const myVideo = useRef();
   const peersRef = useRef([]);
-  const [stream, setStream] = useState();
+  const streamRef = useRef();
 
   useEffect(() => {
     navigator.mediaDevices.getUserMedia({ video: true, audio: true }).then((stream) => {
-      setStream(stream);
+      streamRef.current = stream;
       myVideo.current.srcObject = stream;
-    });
 
-    socket.on("user-connected", (userId) => {
-      // When a new user connects, create a peer and send them a signal
-      const peer = createPeer(userId, socket.id, stream);
-      peersRef.current.push({ peerID: userId, peer });
-      setPeers((prevPeers) => [...prevPeers, peer]);
-    });
+      socket.on("user-connected", ({ userId, allUsers }) => {
+        console.log(`User connected: ${userId}`);
+        const peers = [];
 
-    socket.on("user-joined", (payload) => {
-      // When we receive a signal from a user, add their stream
-      const peer = addPeer(payload.signal, payload.callerID, stream);
-      peersRef.current.push({ peerID: payload.callerID, peer });
-      setPeers((prevPeers) => [...prevPeers, peer]);
-    });
+        allUsers.forEach((user) => {
+          const peer = createPeer(user.id, socket.id, stream);
+          peersRef.current.push({ peerID: user.id, peer });
+          peers.push(peer);
+        });
 
-    socket.on("receiving-returned-signal", (payload) => {
-      // When we receive a signal back, connect the peer
-      const item = peersRef.current.find((p) => p.peerID === payload.id);
-      item.peer.signal(payload.signal);
-    });
+        setPeers((prevPeers) => [...prevPeers, ...peers]);
+      });
 
-    socket.on("user-disconnected", (userId) => {
-      // Handle user disconnects by removing the peer from the list
-      const peerObj = peersRef.current.find((p) => p.peerID === userId);
-      if (peerObj) {
-        peerObj.peer.destroy();
-      }
-      peersRef.current = peersRef.current.filter((p) => p.peerID !== userId);
-      setPeers(peersRef.current.map((p) => p.peer));
+      socket.on("user-joined", ({ signal, callerID }) => {
+        console.log(`User joined: ${callerID}`);
+        const peer = addPeer(signal, callerID, stream);
+        peersRef.current.push({ peerID: callerID, peer });
+        setPeers((prevPeers) => [...prevPeers, peer]);
+      });
+
+      socket.on("receiving-returned-signal", ({ signal, id }) => {
+        const item = peersRef.current.find((p) => p.peerID === id);
+        item.peer.signal(signal);
+      });
+
+      socket.on("user-disconnected", (userId) => {
+        console.log(`User disconnected: ${userId}`);
+        const peerObj = peersRef.current.find((p) => p.peerID === userId);
+        if (peerObj) {
+          peerObj.peer.destroy();
+        }
+        peersRef.current = peersRef.current.filter((p) => p.peerID !== userId);
+        setPeers(peersRef.current.map((p) => p.peer));
+      });
     });
   }, []);
 
   const createRoom = () => {
     const newRoomId = uuidV4();
     setRoomId(newRoomId);
-    socket.emit("join-room", newRoomId, socket.id);
-    setMyId(socket.id);
+    socket.emit("join-room", { roomId: newRoomId, userId: socket.id });
+    console.log(`Room created with ID: ${newRoomId}`);
   };
 
   const joinRoom = () => {
-    socket.emit("join-room", roomId, socket.id);
-    setMyId(socket.id);
+    socket.emit("join-room", { roomId, userId: socket.id });
+    console.log(`Joined room with ID: ${roomId}`);
   };
 
   const createPeer = (userToSignal, callerID, stream) => {
@@ -73,8 +79,11 @@ const VideoChat = () => {
       socket.emit("sending-signal", { userToSignal, callerID, signal });
     });
 
-    peer.on("stream", (stream) => {
-      setPeers((prevPeers) => [...prevPeers, peer]);
+    peer.on("stream", (incomingStream) => {
+      console.log(`Receiving stream from: ${userToSignal}`);
+      const videoElement = document.createElement("video");
+      videoElement.srcObject = incomingStream;
+      videoElement.play();
     });
 
     return peer;
@@ -91,8 +100,11 @@ const VideoChat = () => {
       socket.emit("returning-signal", { signal, callerID });
     });
 
-    peer.on("stream", (stream) => {
-      setPeers((prevPeers) => [...prevPeers, peer]);
+    peer.on("stream", (incomingStream) => {
+      console.log(`Receiving stream from: ${callerID}`);
+      const videoElement = document.createElement("video");
+      videoElement.srcObject = incomingStream;
+      videoElement.play();
     });
 
     peer.signal(incomingSignal);
